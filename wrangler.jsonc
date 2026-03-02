@@ -6,8 +6,11 @@
     "enabled": true
   },
   "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "main": "./dist/_worker.js",
   "compatibility_flags": [
     "nodejs_compat"
   ]
