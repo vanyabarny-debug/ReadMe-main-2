@@ -482,28 +482,23 @@ const detectLanguage = (text: string): LangCode => {
   useEffect(() => { if (selectedEdgeVoice) localStorage.setItem('tts_edge_voice', selectedEdgeVoice); }, [selectedEdgeVoice]);
   useEffect(() => { localStorage.setItem('tts_charIndex', charIndex.toString()); }, [charIndex]);
 
-  const monetagContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // Load Monetag only when the ad modal is shown (prevents "ads from everywhere").
-  useEffect(() => {
-    if (!showAdModal) return;
-    const el = monetagContainerRef.current;
-    if (!el) return;
-
-    // Avoid re-injecting if already loaded in this session.
-    const w = window as any;
-    if (w.__readmeMonetagLoaded) return;
-    w.__readmeMonetagLoaded = true;
-
-    // Clear container and inject the script.
-    el.innerHTML = "";
-    const s = document.createElement("script");
-    s.src = "https://quge5.com/88/tag.min.js";
-    s.async = true;
-    s.setAttribute("data-zone", "215758");
-    s.setAttribute("data-cfasync", "false");
-    el.appendChild(s);
-  }, [showAdModal]);
+  // Monetag scripts often attach global click handlers and keep working after the modal closes.
+  // To keep ads strictly inside the modal, we sandbox them in an iframe.
+  const monetagIframeSrcDoc = useMemo(() => {
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body { margin: 0; padding: 0; background: transparent; }
+    </style>
+  </head>
+  <body>
+    <script src="https://quge5.com/88/tag.min.js" data-zone="215758" async data-cfasync="false"></script>
+  </body>
+</html>`;
+  }, []);
 
   // Language Detection & Auto Voice Switch
   useEffect(() => {
@@ -1370,9 +1365,14 @@ const detectLanguage = (text: string): LangCode => {
                              <span className="text-zinc-500 text-sm font-medium uppercase tracking-wider absolute top-2 left-2">
                                Advertisement
                              </span>
-                             <div
-                               ref={monetagContainerRef}
-                               className="flex items-center justify-center py-4 px-2"
+                             <iframe
+                               title="Advertisement"
+                               className="w-full min-h-[250px] border-0"
+                               // Sandbox prevents the ad script from hooking the parent page.
+                               // We allow scripts so the ad can render. We do NOT allow same-origin or top-navigation.
+                               sandbox="allow-scripts allow-popups allow-forms"
+                               referrerPolicy="no-referrer"
+                               srcDoc={monetagIframeSrcDoc}
                              />
                         </div>
                         
