@@ -591,6 +591,94 @@ const detectLanguage = (text: string): LangCode => {
     handleSpeakInternal();
   };
 
+  const getStreamElementsVoice = (lang: string) => {
+    if (lang === 'ru') return 'Maxim';
+    if (lang === 'en') return 'Brian';
+    if (lang === 'de') return 'Marlene';
+    if (lang === 'es') return 'Mia';
+    if (lang === 'fr') return 'Celine';
+    if (lang === 'ja') return 'Takumi';
+    return 'Brian';
+  };
+
+  const splitTextIntoChunks = (input: string, maxLen: number) => {
+    const text = String(input);
+    if (text.length <= maxLen) return [text];
+    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+    const chunks: string[] = [];
+    let current = '';
+    for (const s of sentences) {
+      if ((current + s).length > maxLen && current) {
+        chunks.push(current);
+        current = s;
+      } else {
+        current += s;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks.map(c => c.trim()).filter(Boolean);
+  };
+
+  const fetchTtsBlob = async ({
+    textToSpeak,
+    lang,
+    voice,
+    signal,
+  }: {
+    textToSpeak: string;
+    lang: string;
+    voice: string;
+    signal: AbortSignal;
+  }) => {
+    // 1) Try server endpoint (works locally, and on prod if a worker exists)
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSpeak, lang, voice }),
+        signal,
+      });
+      if (res.ok) return await res.blob();
+      // Fall back to client-side only for typical "static host" failure modes.
+      if (res.status !== 405) {
+        throw new Error(`TTS request failed: ${res.status}`);
+      }
+    } catch (e) {
+      // If request was aborted, bubble up.
+      if ((e as any)?.name === 'AbortError') throw e;
+      // Otherwise continue to fallback.
+    }
+
+    // 2) Client-side fallback (StreamElements supports CORS)
+    const seVoice = getStreamElementsVoice(lang);
+    const chunks = splitTextIntoChunks(textToSpeak, 1000);
+
+    const buffers: Uint8Array[] = [];
+    let total = 0;
+
+    for (const chunk of chunks) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const url = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(
+        seVoice
+      )}&text=${encodeURIComponent(chunk)}`;
+      const res = await fetch(url, { signal });
+      if (!res.ok) throw new Error(`StreamElements TTS failed: ${res.status}`);
+      const ab = await res.arrayBuffer();
+      const u8 = new Uint8Array(ab);
+      buffers.push(u8);
+      total += u8.byteLength;
+    }
+
+    const combined = new Uint8Array(total);
+    let offset = 0;
+    for (const b of buffers) {
+      combined.set(b, offset);
+      offset += b.byteLength;
+    }
+
+    return new Blob([combined], { type: 'audio/mpeg' });
+  };
+
   const prepareAudio = async (startIndex: number = 0) => {
       // Сбрасываем состояние предзагрузки (но не downloadUrl — последний файл остаётся доступным)
       preloadedAudioRef.current = null;
@@ -614,19 +702,13 @@ const detectLanguage = (text: string): LangCode => {
       const lang = detectedLang;
       const voice = selectedEdgeVoice;
 
-      const promise = fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: textToSpeak, lang, voice }),
-          signal: controller.signal
+      const promise = fetchTtsBlob({
+        textToSpeak,
+        lang,
+        voice,
+        signal: controller.signal,
       })
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(`TTS request failed: ${res.status}`);
-          }
-          return res.blob();
-        })
-        .then(blob => {
+        .then((blob) => {
           const url = URL.createObjectURL(blob);
           const result = [{ url, text: textToSpeak, lang, startIndex: currentStartIndex }];
           preloadedAudioRef.current = result;
@@ -838,16 +920,12 @@ const detectLanguage = (text: string): LangCode => {
                 const lang = detectedLang;
                 const voice = selectedEdgeVoice;
 
-                const res = await fetch('/api/tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: textToSpeak, lang, voice }),
-                    signal: controller.signal
+                const blob = await fetchTtsBlob({
+                    textToSpeak,
+                    lang,
+                    voice,
+                    signal: controller.signal,
                 });
-                if (!res.ok) {
-                    throw new Error(`TTS request failed: ${res.status}`);
-                }
-                const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
                 result = [{ url, text: textToSpeak, lang, startIndex: currentStartIndex }];
                 setDownloadUrl(url);
