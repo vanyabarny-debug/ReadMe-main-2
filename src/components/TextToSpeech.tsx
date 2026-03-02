@@ -458,7 +458,7 @@ const detectLanguage = (text: string): LangCode => {
   const lastUsedVoiceRef = useRef<string>(''); // Track voice used for current playback
 
   const t = TRANSLATIONS[interfaceLang];
-  const ADS_ENABLED = false; // временно отключаем рекламу, чтобы всё стабильно работало
+  const ADS_ENABLED = true;
   const [adMode, setAdMode] = useState<'play' | 'download' | null>(null);
   const [openInfoSection, setOpenInfoSection] = useState<'privacy' | 'terms' | 'about' | null>(null);
 
@@ -482,20 +482,28 @@ const detectLanguage = (text: string): LangCode => {
   useEffect(() => { if (selectedEdgeVoice) localStorage.setItem('tts_edge_voice', selectedEdgeVoice); }, [selectedEdgeVoice]);
   useEffect(() => { localStorage.setItem('tts_charIndex', charIndex.toString()); }, [charIndex]);
 
-  // Initialize AdSense (один раз за сессию, без спама ошибками)
+  const monetagContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Load Monetag only when the ad modal is shown (prevents "ads from everywhere").
   useEffect(() => {
-    try {
-        // @ts-ignore
-        const w = window as any;
-        if (!w.__readmeAdsInitialized) {
-          w.adsbygoogle = w.adsbygoogle || [];
-          w.adsbygoogle.push({});
-          w.__readmeAdsInitialized = true;
-        }
-    } catch (e) {
-        console.error("AdSense error", e);
-    }
-  }, []);
+    if (!showAdModal) return;
+    const el = monetagContainerRef.current;
+    if (!el) return;
+
+    // Avoid re-injecting if already loaded in this session.
+    const w = window as any;
+    if (w.__readmeMonetagLoaded) return;
+    w.__readmeMonetagLoaded = true;
+
+    // Clear container and inject the script.
+    el.innerHTML = "";
+    const s = document.createElement("script");
+    s.src = "https://quge5.com/88/tag.min.js";
+    s.async = true;
+    s.setAttribute("data-zone", "215758");
+    s.setAttribute("data-cfasync", "false");
+    el.appendChild(s);
+  }, [showAdModal]);
 
   // Language Detection & Auto Voice Switch
   useEffect(() => {
@@ -699,10 +707,17 @@ const detectLanguage = (text: string): LangCode => {
   };
 
   const handleSpeak = () => {
-    // Всегда начинаем с начала без показа рекламы
     stopAll();
     setCharIndex(0);
     startOffset.current = 0;
+
+    if (ADS_ENABLED) {
+      triggerAdFlow(() => {
+        handleSpeakInternal();
+      }, 0);
+      return;
+    }
+
     prepareAudio(0);
     handleSpeakInternal();
   };
@@ -927,13 +942,21 @@ const detectLanguage = (text: string): LangCode => {
   const handleDownloadClick = () => {
     if (!downloadUrl) return;
 
-    // Скачивание без рекламы
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = `audio-${Date.now()}.mp3`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const doDownload = () => {
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `audio-${Date.now()}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+
+    if (ADS_ENABLED) {
+      triggerAdFlowForDownload(doDownload);
+      return;
+    }
+
+    doDownload();
   };
 
   return (
@@ -1347,15 +1370,10 @@ const detectLanguage = (text: string): LangCode => {
                              <span className="text-zinc-500 text-sm font-medium uppercase tracking-wider absolute top-2 left-2">
                                Advertisement
                              </span>
-                             {/* Monetag In-Page Push */}
-                             <div className="flex items-center justify-center py-4 px-2">
-                               <script
-                                 src="https://quge5.com/88/tag.min.js"
-                                 data-zone="215758"
-                                 async
-                                 data-cfasync="false"
-                               ></script>
-                             </div>
+                             <div
+                               ref={monetagContainerRef}
+                               className="flex items-center justify-center py-4 px-2"
+                             />
                         </div>
                         
                         <div className="space-y-2">
