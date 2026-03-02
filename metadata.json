@@ -1,0 +1,5 @@
+{
+  "name": "Read Me",
+  "description": "A clean, browser-based text-to-speech tool using high-quality system voices.",
+  "requestFramePermissions": []
+}
