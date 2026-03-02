@@ -1,6 +1,12 @@
-self.options = {
-    "domain": "3nbf4.com",
-    "zoneId": 10673937
-}
-self.lary = ""
-importScripts('https://3nbf4.com/act/files/service-worker.min.js?r=sw')
+// Minimal, safe service worker used only to
+// immediately take control and then let all
+// requests go to the network as usual.
+
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
