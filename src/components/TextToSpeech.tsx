@@ -1369,8 +1369,8 @@ const detectLanguage = (text: string): LangCode => {
                                title="Advertisement"
                                className="w-full min-h-[250px] border-0"
                                // Sandbox prevents the ad script from hooking the parent page.
-                               // We allow scripts so the ad can render. We do NOT allow same-origin or top-navigation.
-                               sandbox="allow-scripts allow-popups allow-forms"
+                               // We only allow scripts so the ad can render. No popups, no parent navigation.
+                               sandbox="allow-scripts"
                                referrerPolicy="no-referrer"
                                srcDoc={monetagIframeSrcDoc}
                              />
