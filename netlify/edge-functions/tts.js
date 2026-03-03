@@ -10,39 +10,45 @@ export default async (request) => {
   }
 
   try {
-    const { text, voice } = await request.json();
+    const body = await request.json();
+    const { text, voice } = body;
     const selectedVoice = voice || "ru-RU-SvetlanaNeural";
-    
-    // Прямой вызов мобильного API через GET (его сложнее забанить)
-    const ttsUrl = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273`;
-    
+
+    // Пробуем Microsoft через мобильный API
+    const msUrl = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273`;
     const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ru-RU'><voice name='${selectedVoice}'><prosody rate='+0%'>${text}</prosody></voice></speak>`;
 
-    const response = await fetch(ttsUrl, {
+    const msRes = await fetch(msUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/ssml+xml",
         "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-        // Имитируем запрос от Edge на Android — это самая "слабая" зона их защиты
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36 EdgA/122.0.2365.62",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/117.0.2045.65"
       },
-      body: ssml,
+      body: ssml
     });
 
-    if (!response.ok) {
-       // Если опять бан — переключаемся на Google "на лету"
-       const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ru&client=tw-ob`;
-       const gRes = await fetch(googleUrl);
-       return new Response(await gRes.arrayBuffer(), {
-         headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" }
-       });
+    if (msRes.ok) {
+      const data = await msRes.arrayBuffer();
+      return new Response(data, { headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" } });
     }
 
-    return new Response(await response.arrayBuffer(), {
+    // ЕСЛИ MICROSOFT СДОХ — ГУГЛ СПАСАЕТ (чтобы не было 500 ошибки)
+    const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ru&client=tw-ob`;
+    const gRes = await fetch(googleUrl);
+    const gData = await gRes.arrayBuffer();
+    
+    return new Response(gData, {
       headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" }
     });
 
   } catch (e) {
-    return new Response(e.message, { status: 500 });
+    // Крайний случай — возвращаем ошибку текстом, чтобы видеть в консоли
+    return new Response(JSON.stringify({ error: e.message }), { 
+      status: 200, // Возвращаем 200, но с ошибкой в JSON, чтобы не ломать фронт
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
+    });
   }
 };
+
+export const config = { path: "/api/tts" };
