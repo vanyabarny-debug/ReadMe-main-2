@@ -1,133 +1,82 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
 
-    // Handle TTS API for POST /api/tts
+    // 1. Обработка CORS Preflight (OPTIONS)
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    // 2. Роут для TTS
     if (url.pathname === "/api/tts") {
-      if (request.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-          },
-        });
-      }
-
       if (request.method !== "POST") {
-        return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
-          status: 405,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
+        return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
       }
 
       try {
-        const { text, voice } = await request.json();
+        const { text, voice = "en-US-AriaNeural" } = await request.json();
 
-        if (!text || typeof text !== "string" || !text.trim()) {
+        if (!text) {
           return new Response(JSON.stringify({ error: "Text required" }), {
             status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        const safeText = text.trim();
-        // Используем voice из запроса (например, "ru-RU-SvetlanaNeural")
-        const voiceName = voice || "en-US-AriaNeural";
-
-        // Формируем SSML для Edge TTS
-        const ssml = `\
-<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${voiceName.split('-')[0]}-${voiceName.split('-')[1]}">
-  <voice name="${voiceName}">
-    <prosody rate="0%" pitch="0%">
-      ${escapeXml(safeText)}
-    </prosody>
-  </voice>
-</speak>`;
-
+        // Используем Edge TTS (Bing)
         const EDGE_TTS_URL = 'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+        
+        const escapeXml = (unsafe) => unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+
+        const ssml = `
+          <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${voice.split('-')[0]}">
+            <voice name="${voice}">
+              <prosody rate="0%" pitch="0%">${escapeXml(text)}</prosody>
+            </voice>
+          </speak>`;
 
         const resp = await fetch(EDGE_TTS_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/ssml+xml',
-            'Accept': 'audio/webm;codecs=opus',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-            'Origin': 'https://speech.platform.bing.com',
-            'Referer': 'https://speech.platform.bing.com/',
+            'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           },
           body: ssml,
         });
 
         if (!resp.ok) {
-          // Попробуем прочитать текст ошибки для диагностики
-          let errorText = '';
-          try {
-            errorText = await resp.text();
-          } catch (e) {}
-          return new Response(
-            JSON.stringify({ error: `Edge TTS error: ${resp.status}`, details: errorText }),
-            {
-              status: 502,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
-            }
-          );
+          throw new Error(`Edge TTS status: ${resp.status}`);
         }
 
         const audioData = await resp.arrayBuffer();
         return new Response(audioData, {
           status: 200,
           headers: {
-            "Content-Type": "audio/mpeg",
-            "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-store",
+            ...corsHeaders,
+            'Content-Type': 'audio/mpeg',
+            'Cache-Control': 'no-store',
           },
         });
-      } catch (e) {
-        return new Response(
-          JSON.stringify({
-            error: "TTS failed",
-            details: e && e.message,
-          }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
-        );
+
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
 
-    // For everything else, serve static assets
-    if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
+    // 3. Обслуживание фронтенда (Assets)
+    if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
 
     return new Response("Not found", { status: 404 });
   },
 };
-
-function escapeXml(unsafe) {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
-    switch (c) {
-      case '<': return '&lt;';
-      case '>': return '&gt;';
-      case '&': return '&amp;';
-      case "'": return '&apos;';
-      case '"': return '&quot;';
-      default: return c;
-    }
-  });
-}
