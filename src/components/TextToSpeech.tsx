@@ -591,35 +591,9 @@ const detectLanguage = (text: string): LangCode => {
     handleSpeakInternal();
   };
 
-  const getStreamElementsVoice = (lang: string) => {
-    if (lang === 'ru') return 'Maxim';
-    if (lang === 'en') return 'Brian';
-    if (lang === 'de') return 'Marlene';
-    if (lang === 'es') return 'Mia';
-    if (lang === 'fr') return 'Celine';
-    if (lang === 'ja') return 'Takumi';
-    return 'Brian';
-  };
+ // Мы удалили getStreamElementsVoice и splitTextIntoChunks, так как воркер делает всё сам
 
-  const splitTextIntoChunks = (input: string, maxLen: number) => {
-    const text = String(input);
-    if (text.length <= maxLen) return [text];
-    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-    const chunks: string[] = [];
-    let current = '';
-    for (const s of sentences) {
-      if ((current + s).length > maxLen && current) {
-        chunks.push(current);
-        current = s;
-      } else {
-        current += s;
-      }
-    }
-    if (current) chunks.push(current);
-    return chunks.map(c => c.trim()).filter(Boolean);
-  };
-
- const fetchTtsBlob = async ({
+  const fetchTtsBlob = async ({
     textToSpeak,
     voice,
     signal,
@@ -629,7 +603,6 @@ const detectLanguage = (text: string): LangCode => {
     voice: string;
     signal: AbortSignal;
   }) => {
-    // Отправляем запрос только на наш воркер
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -648,62 +621,58 @@ const detectLanguage = (text: string): LangCode => {
     return await res.blob();
   };
 
-  // Прямо за закрывающей скобкой функции выше должен идти prepareAudio
   const prepareAudio = async (startIndex: number = 0) => {
+    // Сбрасываем состояние предзагрузки
+    preloadedAudioRef.current = null;
+    setIsPreloadReady(false);
+    
+    if (!text.trim()) return;
+    
+    let currentStartIndex = startIndex;
+    if (currentStartIndex >= text.length) currentStartIndex = 0;
+    
+    const textToSpeak = text.slice(currentStartIndex);
+    if (!textToSpeak.trim()) return;
 
+    // Отменяем предыдущий запрос, если он ещё идёт
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-  const prepareAudio = async (startIndex: number = 0) => {
-      // Сбрасываем состояние предзагрузки (но не downloadUrl — последний файл остаётся доступным)
-      preloadedAudioRef.current = null;
-      setIsPreloadReady(false);
-      
-      if (!text.trim()) return;
-      
-      let currentStartIndex = startIndex;
-      if (currentStartIndex >= text.length) currentStartIndex = 0;
-      
-      const textToSpeak = text.slice(currentStartIndex);
-      if (!textToSpeak.trim()) return;
+    const lang = detectedLang;
+    const voice = selectedEdgeVoice;
 
-      // Отменяем предыдущий запрос, если он ещё идёт
-      if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-      }
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      const lang = detectedLang;
-      const voice = selectedEdgeVoice;
-
-      const promise = fetchTtsBlob({
-        textToSpeak,
-        lang,
-        voice,
-        signal: controller.signal,
+    const promise = fetchTtsBlob({
+      textToSpeak,
+      lang,
+      voice,
+      signal: controller.signal,
+    })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const result = [{ url, text: textToSpeak, lang, startIndex: currentStartIndex }];
+        preloadedAudioRef.current = result;
+        setIsPreloadReady(true);
+        setDownloadUrl(url);
+        setLastGeneratedText(text);
+        abortControllerRef.current = null;
+        return result;
       })
-        .then((blob) => {
-          const url = URL.createObjectURL(blob);
-          const result = [{ url, text: textToSpeak, lang, startIndex: currentStartIndex }];
-          preloadedAudioRef.current = result;
-          setIsPreloadReady(true);
-          setDownloadUrl(url);
-          setLastGeneratedText(text);
-          abortControllerRef.current = null;
-          return result;
-        })
-        .catch(e => {
-          if ((e as any).name === 'AbortError') {
-            console.log('TTS preload aborted');
-          } else {
-            console.error('Preload failed', e);
-          }
-          preloadedAudioRef.current = null;
-          setIsPreloadReady(false);
-          abortControllerRef.current = null;
-          throw e;
-        });
+      .catch(e => {
+        if ((e as any).name === 'AbortError') {
+          console.log('TTS preload aborted');
+        } else {
+          console.error('Preload failed', e);
+        }
+        preloadedAudioRef.current = null;
+        setIsPreloadReady(false);
+        abortControllerRef.current = null;
+        throw e;
+      });
 
-      preloadedAudioPromiseRef.current = promise;
+    preloadedAudioPromiseRef.current = promise;
   };
 
   const triggerAdFlow = (callback: () => void, startIndex: number = 0) => {
