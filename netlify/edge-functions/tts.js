@@ -5,7 +5,7 @@ export default async (request) => {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
-      },
+      }
     });
   }
 
@@ -13,33 +13,32 @@ export default async (request) => {
     const { text, voice } = await request.json();
     const selectedVoice = voice || "ru-RU-SvetlanaNeural";
     
-    // Попробуем через старый добрый Bing эндпоинт, он иногда стабильнее для Edge Functions
-    const url = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273`;
+    // Прямой вызов мобильного API через GET (его сложнее забанить)
+    const ttsUrl = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273`;
     
     const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ru-RU'><voice name='${selectedVoice}'><prosody rate='+0%'>${text}</prosody></voice></speak>`;
 
-    const response = await fetch(url, {
+    const response = await fetch(ttsUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/ssml+xml",
         "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-        // Указываем заголовок, который имитирует "проброс" реального IP (иногда помогает)
-        "X-Forwarded-For": "1.1.1.1", 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edge/122.0.0.0",
-        "Origin": "chrome-extension://jdiccldimpdaibmpdkjnbmckbehnmcgd"
+        // Имитируем запрос от Edge на Android — это самая "слабая" зона их защиты
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36 EdgA/122.0.2365.62",
       },
       body: ssml,
     });
 
     if (!response.ok) {
-      // Если опять 502, попробуй вывести само сообщение от MS в консоль Netlify
-      const err = await response.text();
-      console.log("MS Response Error:", err);
-      return new Response("MS Rejected", { status: 502 });
+       // Если опять бан — переключаемся на Google "на лету"
+       const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ru&client=tw-ob`;
+       const gRes = await fetch(googleUrl);
+       return new Response(await gRes.arrayBuffer(), {
+         headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" }
+       });
     }
 
-    const data = await response.arrayBuffer();
-    return new Response(data, {
+    return new Response(await response.arrayBuffer(), {
       headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" }
     });
 
@@ -47,5 +46,3 @@ export default async (request) => {
     return new Response(e.message, { status: 500 });
   }
 };
-
-export const config = { path: "/api/tts" };
