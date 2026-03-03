@@ -1,5 +1,5 @@
 export default async (request) => {
-  // Обработка CORS
+  // 1. Обработка CORS (чтобы фронтенд мог достучаться)
   if (request.method === "OPTIONS") {
     return new Response(null, {
       headers: {
@@ -12,9 +12,15 @@ export default async (request) => {
 
   try {
     const { text, voice } = await request.json();
+    
+    if (!text) {
+      return new Response(JSON.stringify({ error: "No text provided" }), { status: 400 });
+    }
+
+    const selectedVoice = voice || "ru-RU-SvetlanaNeural";
     const endpoint = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273`;
     
-    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ru-RU'><voice name='${voice || "ru-RU-SvetlanaNeural"}'><prosody rate='+0%'>${text}</prosody></voice></speak>`;
+    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ru-RU'><voice name='${selectedVoice}'><prosody rate='+0%'>${text}</prosody></voice></speak>`;
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -26,17 +32,31 @@ export default async (request) => {
       body: ssml,
     });
 
-    if (!response.ok) throw new Error("Microsoft rejected");
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("MS Error:", errorText);
+      return new Response(JSON.stringify({ error: "Microsoft rejected", detail: errorText }), { 
+        status: 502,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
+    }
 
-    const data = await response.arrayBuffer();
-    return new Response(data, {
+    const audioData = await response.arrayBuffer();
+    
+    return new Response(audioData, {
       headers: {
         "Content-Type": "audio/mpeg",
         "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
       },
     });
+
   } catch (e) {
-    return new Response(e.message, { status: 500 });
+    console.error("Runtime Error:", e.message);
+    return new Response(JSON.stringify({ error: e.message }), { 
+      status: 500,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    });
   }
 };
 
