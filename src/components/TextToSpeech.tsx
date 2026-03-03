@@ -629,7 +629,7 @@ const detectLanguage = (text: string): LangCode => {
     voice: string;
     signal: AbortSignal;
   }) => {
-    // 1) Отправляем запрос только на наш воркер
+    // Отправляем запрос только на наш воркер
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -645,9 +645,11 @@ const detectLanguage = (text: string): LangCode => {
       throw new Error(errorData.error || `TTS failed: ${res.status}`);
     }
 
-    // Возвращаем аудио-файл
     return await res.blob();
   };
+
+  // Прямо за закрывающей скобкой функции выше должен идти prepareAudio
+  const prepareAudio = async (startIndex: number = 0) => {
 
 
   const prepareAudio = async (startIndex: number = 0) => {
