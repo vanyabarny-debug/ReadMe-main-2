@@ -620,34 +620,41 @@ const detectLanguage = (text: string): LangCode => {
   };
 
   const fetchTtsBlob = async ({
-    textToSpeak,
-    lang,
-    voice,
-    signal,
-  }: {
-    textToSpeak: string;
-    lang: string;
-    voice: string;
-    signal: AbortSignal;
-  }) => {
-    // 1) Try server endpoint (works locally, and on prod if a worker exists)
-    try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToSpeak, lang, voice }),
-        signal,
-      });
-      if (res.ok) return await res.blob();
-      // Fall back to client-side only for typical "static host" failure modes.
-      if (res.status !== 405) {
-        throw new Error(`TTS request failed: ${res.status}`);
-      }
-    } catch (e) {
-      // If request was aborted, bubble up.
-      if ((e as any)?.name === 'AbortError') throw e;
-      // Otherwise continue to fallback.
+  textToSpeak,
+  lang,
+  voice,
+  signal,
+}: {
+  textToSpeak: string;
+  lang: string;
+  voice: string;
+  signal: AbortSignal;
+}) => {
+  // Теперь мы стучимся ТОЛЬКО в наш воркер. 
+  // Он сам решит, какой голос использовать и как синтезировать.
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        text: textToSpeak, 
+        voice: voice // Передаем ID голоса (например, 'ru-RU-SvetlanaNeural')
+      }),
+      signal,
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `TTS request failed: ${res.status}`);
     }
+
+    return await res.blob();
+  } catch (e) {
+    if ((e as any)?.name === 'AbortError') throw e;
+    console.error("Worker TTS failed:", e);
+    throw e; 
+  }
+};
 
     // 2) Client-side fallback (StreamElements supports CORS)
     const seVoice = getStreamElementsVoice(lang);
