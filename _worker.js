@@ -17,7 +17,7 @@ export default {
         const { text, voice } = await request.json();
         const selectedVoice = voice || "ru-RU-SvetlanaNeural";
         
-        const edgeUrl = 'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273';
+        const edgeUrl = 'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=5A2E9ADD-CD31-4B9F-8461-AD672199F920';
         
         // Самый простой формат SSML без лишних оберток
         const ssml = `<speak version='1.0' xml:lang='ru-RU'><voice name='${selectedVoice}'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>${text}</prosody></voice></speak>`;
