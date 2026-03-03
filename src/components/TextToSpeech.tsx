@@ -619,7 +619,7 @@ const detectLanguage = (text: string): LangCode => {
     return chunks.map(c => c.trim()).filter(Boolean);
   };
 
-  const fetchTtsBlob = async ({
+ const fetchTtsBlob = async ({
     textToSpeak,
     voice,
     signal,
@@ -629,13 +629,13 @@ const detectLanguage = (text: string): LangCode => {
     voice: string;
     signal: AbortSignal;
   }) => {
-    // Мы убрали всё лишнее. Теперь только один чистый запрос к нашему воркеру.
+    // 1) Отправляем запрос только на наш воркер
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         text: textToSpeak, 
-        voice: voice // Передаем ID голоса, например 'en-US-AriaNeural'
+        voice: voice 
       }),
       signal,
     });
@@ -645,38 +645,10 @@ const detectLanguage = (text: string): LangCode => {
       throw new Error(errorData.error || `TTS failed: ${res.status}`);
     }
 
+    // Возвращаем аудио-файл
     return await res.blob();
   };
 
-    // 2) Client-side fallback (StreamElements supports CORS)
-    const seVoice = getStreamElementsVoice(lang);
-    const chunks = splitTextIntoChunks(textToSpeak, 1000);
-
-    const buffers: Uint8Array[] = [];
-    let total = 0;
-
-    for (const chunk of chunks) {
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const url = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(
-        seVoice
-      )}&text=${encodeURIComponent(chunk)}`;
-      const res = await fetch(url, { signal });
-      if (!res.ok) throw new Error(`StreamElements TTS failed: ${res.status}`);
-      const ab = await res.arrayBuffer();
-      const u8 = new Uint8Array(ab);
-      buffers.push(u8);
-      total += u8.byteLength;
-    }
-
-    const combined = new Uint8Array(total);
-    let offset = 0;
-    for (const b of buffers) {
-      combined.set(b, offset);
-      offset += b.byteLength;
-    }
-
-    return new Blob([combined], { type: 'audio/mpeg' });
-  };
 
   const prepareAudio = async (startIndex: number = 0) => {
       // Сбрасываем состояние предзагрузки (но не downloadUrl — последний файл остаётся доступным)
