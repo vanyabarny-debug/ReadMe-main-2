@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Play, Square, Pause, Settings2, BookOpen, Volume2, Copy, Check, X, ArrowUp, ArrowDown, Loader2, Download, Ban } from 'lucide-react';
 import Linkify from 'linkify-react';
 import { motion, AnimatePresence } from 'motion/react';
