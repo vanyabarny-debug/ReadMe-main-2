@@ -10,42 +10,38 @@ export default async (request) => {
   }
 
   try {
-    const body = await request.json();
-    const { text, voice } = body;
+    const { text, voice } = await request.json();
     const selectedVoice = voice || "ru-RU-SvetlanaNeural";
 
-    // Пробуем Microsoft через мобильный API
-    const msUrl = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/single-expectation/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D3C21D6273`;
-    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='ru-RU'><voice name='${selectedVoice}'><prosody rate='+0%'>${text}</prosody></voice></speak>`;
-
-    const msRes = await fetch(msUrl, {
-      method: "POST",
+    // 1. Пробуем Google сразу (он самый стабильный на Netlify)
+    const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text.substring(0, 200))}&tl=ru&client=tw-ob`;
+    
+    const response = await fetch(googleUrl, {
       headers: {
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/117.0.2045.65"
-      },
-      body: ssml
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      }
     });
 
-    if (msRes.ok) {
-      const data = await msRes.arrayBuffer();
-      return new Response(data, { headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" } });
+    if (!response.ok) throw new Error("Google down");
+
+    const audioData = await response.arrayBuffer();
+
+    // ПРОВЕРКА: Если пришло меньше 1000 байт — это точно не звук, а ошибка текстом
+    if (audioData.byteLength < 1000) {
+      throw new Error("Invalid audio data received");
     }
 
-    // ЕСЛИ MICROSOFT СДОХ — ГУГЛ СПАСАЕТ (чтобы не было 500 ошибки)
-    const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ru&client=tw-ob`;
-    const gRes = await fetch(googleUrl);
-    const gData = await gRes.arrayBuffer();
-    
-    return new Response(gData, {
-      headers: { "Content-Type": "audio/mpeg", "Access-Control-Allow-Origin": "*" }
+    return new Response(audioData, {
+      headers: {
+        "Content-Type": "audio/mpeg", // Явно говорим браузеру, что это MP3
+        "Access-Control-Allow-Origin": "*",
+        "Content-Length": audioData.byteLength.toString()
+      },
     });
 
   } catch (e) {
-    // Крайний случай — возвращаем ошибку текстом, чтобы видеть в консоли
     return new Response(JSON.stringify({ error: e.message }), { 
-      status: 200, // Возвращаем 200, но с ошибкой в JSON, чтобы не ломать фронт
+      status: 400, // Возвращаем 400, чтобы фронтенд понял: что-то не так
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
     });
   }
