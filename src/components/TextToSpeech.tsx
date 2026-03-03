@@ -1386,14 +1386,11 @@ const detectLanguage = (text: string): LangCode => {
                                Advertisement
                              </span>
                              <iframe
-                               title="Advertisement"
-                               className="w-full min-h-[250px] border-0"
-                               // Sandbox prevents the ad script from hooking the parent page.
-                               // We only allow scripts so the ad can render. No popups, no parent navigation.
-                               sandbox="allow-scripts"
-                               referrerPolicy="no-referrer"
-                               srcDoc={monetagIframeSrcDoc}
-                             />
+  srcDoc={monetagIframeSrcDoc}
+  // Это критично для Monetag: без этого реклама не засчитает показы
+  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+  style={{ width: '100%', height: '250px', border: 'none' }}
+/>
                         </div>
                         
                         <div className="space-y-2">
