@@ -1387,9 +1387,9 @@ const detectLanguage = (text: string): LangCode => {
                              </span>
                              <iframe
   srcDoc={monetagIframeSrcDoc}
-  // Это критично для Monetag: без этого реклама не засчитает показы
-  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-  style={{ width: '100%', height: '250px', border: 'none' }}
+  // Добавляем allow-top-navigation, чтобы реклама могла открываться
+  sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-top-navigation"
+  style={{ width: '100%', height: '280px', border: 'none', display: 'block' }}
 />
                         </div>
                         

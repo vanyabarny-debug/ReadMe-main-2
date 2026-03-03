@@ -5,3 +5,9 @@
 [[edge_functions]]
   function = "tts"
   path = "/api/tts"
+
+  [[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Content-Security-Policy = "frame-ancestors 'self' *; img-src * data:; script-src * 'unsafe-inline' 'unsafe-eval';"
