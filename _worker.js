@@ -4,65 +4,92 @@ export default {
 
     // Handle TTS API for POST /api/tts
     if (url.pathname === "/api/tts") {
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+          },
+        });
+      }
+
       if (request.method !== "POST") {
         return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
           status: 405,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
         });
       }
 
       try {
-        const { text, lang, voice } = await request.json();
+        const { text, voice } = await request.json();
 
         if (!text || typeof text !== "string" || !text.trim()) {
           return new Response(JSON.stringify({ error: "Text required" }), {
             status: 400,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
           });
         }
 
         const safeText = text.trim();
-        const targetLang = (lang || "en").toString();
+        // Используем voice из запроса (например, "ru-RU-SvetlanaNeural")
+        const voiceName = voice || "en-US-AriaNeural";
 
-        // Map language to StreamElements voice
-        let seVoice = "Brian";
-        if (targetLang === "ru") seVoice = "Maxim";
-        else if (targetLang === "en") seVoice = "Brian";
-        else if (targetLang === "de") seVoice = "Marlene";
-        else if (targetLang === "es") seVoice = "Mia";
-        else if (targetLang === "fr") seVoice = "Celine";
-        else if (targetLang === "ja") seVoice = "Takumi";
+        // Формируем SSML для Edge TTS
+        const ssml = `\
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${voiceName.split('-')[0]}-${voiceName.split('-')[1]}">
+  <voice name="${voiceName}">
+    <prosody rate="0%" pitch="0%">
+      ${escapeXml(safeText)}
+    </prosody>
+  </voice>
+</speak>`;
 
-        const streamText = safeText.slice(0, 1000);
-        const seUrl = `https://api.streamelements.com/kappa/v2/speech?voice=${encodeURIComponent(
-          seVoice
-        )}&text=${encodeURIComponent(streamText)}`;
+        const EDGE_TTS_URL = 'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4';
 
-        const seRes = await fetch(seUrl);
+        const resp = await fetch(EDGE_TTS_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/ssml+xml',
+            'Accept': 'audio/webm;codecs=opus',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+            'Origin': 'https://speech.platform.bing.com',
+            'Referer': 'https://speech.platform.bing.com/',
+          },
+          body: ssml,
+        });
 
-        if (!seRes.ok) {
+        if (!resp.ok) {
+          // Попробуем прочитать текст ошибки для диагностики
+          let errorText = '';
+          try {
+            errorText = await resp.text();
+          } catch (e) {}
           return new Response(
-            JSON.stringify({ error: `StreamElements error: ${seRes.status}` }),
+            JSON.stringify({ error: `Edge TTS error: ${resp.status}`, details: errorText }),
             {
               status: 502,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+              },
             }
           );
         }
 
-        const audioArrayBuffer = await seRes.arrayBuffer();
-
-        if (audioArrayBuffer.byteLength < 100) {
-          return new Response(JSON.stringify({ error: "Audio too short" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(audioArrayBuffer, {
+        const audioData = await resp.arrayBuffer();
+        return new Response(audioData, {
           status: 200,
           headers: {
             "Content-Type": "audio/mpeg",
+            "Access-Control-Allow-Origin": "*",
             "Cache-Control": "no-store",
           },
         });
@@ -74,13 +101,16 @@ export default {
           }),
           {
             status: 500,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
           }
         );
       }
     }
 
-    // For everything else, serve static assets as before
+    // For everything else, serve static assets
     if (env.ASSETS && typeof env.ASSETS.fetch === "function") {
       return env.ASSETS.fetch(request);
     }
@@ -89,3 +119,15 @@ export default {
   },
 };
 
+function escapeXml(unsafe) {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case "'": return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+}
